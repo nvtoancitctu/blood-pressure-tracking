@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="vi" class="h-full bg-slate-50">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Hệ Thống Phân Tích & Trực Quan Hoá Huyết Áp</title>
+        <!-- Tailwind CSS -->
+        <script src="https://cdn.tailwindcss.com"></script>
+        <!-- Chart.js -->
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <!-- SheetJS (xlsx parser) -->
+        <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+        <!-- Lucide Icons -->
+        <script src="https://unpkg.com/lucide@latest"></script>
+        <!-- Google Fonts -->
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+        <style>
+            body {
+                font-family: "Inter", sans-serif;
+            }
+            .glass-card {
+                background: rgba(255, 255, 255, 0.95);
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(226, 232, 240, 0.8);
+            }
+            /* Custom scrollbar */
+            ::-webkit-scrollbar {
+                width: 6px;
+                height: 6px;
+            }
+            ::-webkit-scrollbar-track {
+                background: #f1f5f9;
+            }
+            ::-webkit-scrollbar-thumb {
+                background: #cbd5e1;
+                border-radius: 4px;
+            }
+            ::-webkit-scrollbar-thumb:hover {
+                background: #94a3b8;
+            }
+        </style>
+    </head>
+    <body class="h-full text-slate-800 flex flex-col min-h-screen">
+        <!-- Top Navigation Header -->
+        <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16 items-center">
+                    <div class="flex items-center space-x-3">
+                        <div class="p-2 bg-rose-500 text-white rounded-xl shadow-md shadow-rose-200">
+                            <i data-lucide="activity" class="w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-lg font-bold text-slate-900 leading-tight">BP Analytics AI</h1>
+                            <p class="text-xs text-slate-500">Trực quan hóa & Phân tích thông minh file Excel đo Huyết áp</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center space-x-3">
+                        <label for="excelFile" class="flex items-center space-x-2 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg font-medium text-sm cursor-pointer shadow-sm transition duration-200">
+                            <i data-lucide="upload" class="w-4 h-4"></i>
+                            <span>Tải File Excel Mới</span>
+                        </label>
+                        <input type="file" id="excelFile" accept=".xlsx, .xls, .csv" class="hidden" />
+
+                        <button id="btnAiAnalyze" onclick="runAiAnalysis()" class="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium text-sm shadow-sm transition duration-200">
+                            <i data-lucide="sparkles" class="w-4 h-4"></i>
+                            <span>Phân Tích AI</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Container -->
+        <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+            <!-- Top Banner / File Info -->
+            <div class="bg-gradient-to-r from-slate-900 to-slate-800 text-white p-6 rounded-2xl shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <div class="inline-flex items-center gap-2 bg-slate-700/60 px-3 py-1 rounded-full text-xs text-rose-300 font-medium mb-2">
+                        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i>
+                        <span id="loadedFileName">Theo dỗi kết quả đo huyết áp (Mẫu chuẩn)</span>
+                    </div>
+                    <h2 class="text-xl md:text-2xl font-bold text-white">Báo Cáo Thống Kê & Đánh Giá Chỉ Số Huyết Áp</h2>
+                    <p class="text-slate-300 text-sm mt-1">Dữ liệu được tự động phân loại theo chuẩn Hiệp hội Tim mạch Hoa Kỳ (AHA/ACC).</p>
+                </div>
+                <div class="flex items-center space-x-3 bg-white/10 px-4 py-3 rounded-xl border border-white/10 backdrop-blur-sm">
+                    <i data-lucide="calendar" class="w-5 h-5 text-rose-400"></i>
+                    <div class="text-xs">
+                        <div class="text-slate-400">Khoảng thời gian ghi nhận</div>
+                        <div id="dateRangeText" class="font-semibold text-white">Đang tải...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metrics Overview Grid -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <!-- Avg SYS -->
+                <div class="glass-card p-4 rounded-xl shadow-sm hover:shadow-md transition">
+                    <div class="flex justify-between items-center text-slate-500 text-xs font-semibold uppercase tracking-wider">
+                        <span>Tâm Thu Trung Bình (SYS)</span>
+                        <span class="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><i data-lucide="arrow-up-right" class="w-4 h-4"></i></span>
+                    </div>
+                    <div class="mt-2 flex items-baseline gap-2">
+                        <span id="metricAvgSys" class="text-3xl font-extrabold text-slate-900">--</span>
+                        <span class="text-xs font-medium text-slate-500">mmHg</span>
+                    </div>
+                    <div id="statusSys" class="mt-2 text-xs font-medium inline-block px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">--</div>
+                </div>
+
+                <!-- Avg DIA -->
+                <div class="glass-card p-4 rounded-xl shadow-sm hover:shadow-md transition">
+                    <div class="flex justify-between items-center text-slate-500 text-xs font-semibold uppercase tracking-wider">
+                        <span>Tâm Trương T.Bình (DIA)</span>
+                        <span class="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><i data-lucide="arrow-down-right" class="w-4 h-4"></i></span>
+                    </div>
+                    <div class="mt-2 flex items-baseline gap-2">
+                        <span id="metricAvgDia" class="text-3xl font-extrabold text-slate-900">--</span>
+                        <span class="text-xs font-medium text-slate-500">mmHg</span>
+                    </div>
+                    <div id="statusDia" class="mt-2 text-xs font-medium inline-block px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">--</div>
+                </div>
+
+                <!-- Avg Pulse -->
+                <div class="glass-card p-4 rounded-xl shadow-sm hover:shadow-md transition">
+                    <div class="flex justify-between items-center text-slate-500 text-xs font-semibold uppercase tracking-wider">
+                        <span>Nhịp Tim Trung Bình</span>
+                        <span class="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg"><i data-lucide="heart-pulse" class="w-4 h-4"></i></span>
+                    </div>
+                    <div class="mt-2 flex items-baseline gap-2">
+                        <span id="metricAvgPulse" class="text-3xl font-extrabold text-slate-900">--</span>
+                        <span class="text-xs font-medium text-slate-500">BPM</span>
+                    </div>
+                    <div id="statusPulse" class="mt-2 text-xs font-medium text-slate-500">Bình thường (60-100)</div>
+                </div>
+
+                <!-- Total Logs / Risk Grade -->
+                <div class="glass-card p-4 rounded-xl shadow-sm hover:shadow-md transition">
+                    <div class="flex justify-between items-center text-slate-500 text-xs font-semibold uppercase tracking-wider">
+                        <span>Tổng Số Lần Đo</span>
+                        <span class="p-1.5 bg-amber-50 text-amber-600 rounded-lg"><i data-lucide="file-text" class="w-4 h-4"></i></span>
+                    </div>
+                    <div class="mt-2 flex items-baseline gap-2">
+                        <span id="metricTotalLogs" class="text-3xl font-extrabold text-slate-900">0</span>
+                        <span class="text-xs font-medium text-slate-500">bản ghi</span>
+                    </div>
+                    <div id="metricRiskBadge" class="mt-2 text-xs font-semibold inline-block px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">Đang đánh giá</div>
+                </div>
+            </div>
+
+            <!-- AI Analysis Section -->
+            <div id="aiSection" class="glass-card rounded-2xl p-6 border border-indigo-100 bg-gradient-to-br from-indigo-50/40 via-white to-purple-50/30 shadow-sm relative overflow-hidden">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center space-x-3">
+                        <div class="p-2.5 bg-indigo-600 text-white rounded-xl shadow-md shadow-indigo-200">
+                            <i data-lucide="brain-circuit" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base font-bold text-slate-900">Báo Cáo Đánh Giá Y Khoa AI (Gemini Flash)</h3>
+                            <p class="text-xs text-slate-500">Tự động phân tích xu hướng, cảnh báo rủi ro & khuyến nghị chăm sóc sức khỏe</p>
+                        </div>
+                    </div>
+                    <button onclick="runAiAnalysis()" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+                        <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
+                        Phân tích lại
+                    </button>
+                </div>
+
+                <div id="aiLoading" class="hidden py-8 text-center">
+                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent mb-3"></div>
+                    <p class="text-sm font-medium text-indigo-900">AI đang xử lý dữ liệu huyết áp & tính toán chỉ số rủi ro...</p>
+                </div>
+
+                <div id="aiContent" class="prose prose-sm max-w-none text-slate-700 space-y-3">
+                    <p class="text-sm text-slate-500 italic">Nhấp nút "Phân Tích AI" ở góc trên hoặc hệ thống sẽ tự động tổng hợp khi bạn tải dữ liệu Excel mới.</p>
+                </div>
+            </div>
+
+            <!-- Charts Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Time Series Chart (Spans 2 Cols) -->
+                <div class="glass-card rounded-2xl p-5 shadow-sm lg:col-span-2 flex flex-col justify-between">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                        <div>
+                            <h3 class="font-bold text-slate-900 text-base">Diễn Biến Huyết Áp Theo Thời Gian</h3>
+                            <p class="text-xs text-slate-500">Biểu đồ đường thể hiện chỉ số Tâm thu (SYS) và Tâm trương (DIA)</p>
+                        </div>
+                        <div class="flex items-center space-x-2 text-xs">
+                            <span class="inline-flex items-center gap-1 text-rose-600 font-medium">
+                                <span class="w-3 h-3 rounded-full bg-rose-500"></span>
+                                Tâm Thu
+                            </span>
+                            <span class="inline-flex items-center gap-1 text-blue-600 font-medium">
+                                <span class="w-3 h-3 rounded-full bg-blue-500"></span>
+                                Tâm Trương
+                            </span>
+                        </div>
+                    </div>
+                    <div class="h-72 w-full relative">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Category Donut Chart (Spans 1 Col) -->
+                <div class="glass-card rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+                    <div>
+                        <h3 class="font-bold text-slate-900 text-base">Phân Loại Huyết Áp (AHA)</h3>
+                        <p class="text-xs text-slate-500">Tỷ lệ các mức độ đo đạt được</p>
+                    </div>
+                    <div class="h-64 my-auto relative">
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                    <div class="text-xs text-slate-400 text-center mt-2">Dựa trên tiêu chuẩn AHA/ACC 2017</div>
+                </div>
+            </div>
+
+            <!-- Secondary Charts -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Pulse Chart -->
+                <div class="glass-card rounded-2xl p-5 shadow-sm">
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h3 class="font-bold text-slate-900 text-base">Biến Đổi Nhịp Tim (Pulse)</h3>
+                            <p class="text-xs text-slate-500">Nhịp tim (BPM) qua từng đợt kiểm tra</p>
+                        </div>
+                    </div>
+                    <div class="h-60 w-full relative">
+                        <canvas id="pulseChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Time of Day / Morning vs Evening -->
+                <div class="glass-card rounded-2xl p-5 shadow-sm">
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h3 class="font-bold text-slate-900 text-base">So Sánh Huyết Áp Sáng vs Tối</h3>
+                            <p class="text-xs text-slate-500">Trung bình Tâm thu theo thời điểm trong ngày</p>
+                        </div>
+                    </div>
+                    <div class="h-60 w-full relative">
+                        <canvas id="daytimeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Table Section -->
+            <div class="glass-card rounded-2xl p-5 shadow-sm overflow-hidden">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                    <div>
+                        <h3 class="font-bold text-slate-900 text-base">Chi Tiết Bảng Dữ Liệu Đo Huyết Áp</h3>
+                        <p class="text-xs text-slate-500">Danh sách các lượt đo được trích xuất từ file Excel</p>
+                    </div>
+                    <div class="flex items-center space-x-2 w-full sm:w-auto">
+                        <div class="relative flex-1 sm:w-64">
+                            <i data-lucide="search" class="w-4 h-4 absolute left-3 top-2.5 text-slate-400"></i>
+                            <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Tìm kiếm ghi chú, thời gian..." class="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-rose-500" />
+                        </div>
+                        <button onclick="exportTableToExcel()" class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-1">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                            Export
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto border border-slate-200 rounded-xl max-h-96">
+                    <table class="w-full text-left text-xs" id="dataTable">
+                        <thead class="bg-slate-100 text-slate-700 font-semibold sticky top-0 z-10">
+                            <tr>
+                                <th class="p-3 border-b">STT</th>
+                                <th class="p-3 border-b">Thời gian</th>
+                                <th class="p-3 border-b text-center">Tâm Thu (SYS)</th>
+                                <th class="p-3 border-b text-center">Tâm Trương (DIA)</th>
+                                <th class="p-3 border-b text-center">Nhịp Tim (BPM)</th>
+                                <th class="p-3 border-b">Phân Loại AHA</th>
+                                <th class="p-3 border-b">Ghi Chú / Triệu Chứng</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody" class="divide-y divide-slate-100 text-slate-600">
+                            <!-- Dynamic Rows -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="bg-white border-t border-slate-200 py-4 mt-auto">
+            <div class="max-w-7xl mx-auto px-4 text-center text-xs text-slate-400">Hệ thống Tự động Trực quan hóa & Phân tích Huyết áp © 2026 | Hỗ trợ mô hình Gemini AI</div>
+        </footer>
+
+        <!-- JavaScript Logic -->
+        <script>
+            // Global State & Data
+            let parsedData = [];
+            let chartInstances = {};
+
+            // Sample Data for initial demo if user hasn't uploaded yet
+            const sampleExcelData = [
+                { "Thời gian": "2026-03-01 07:30", "Tâm thu": 118, "Tâm trương": 78, "Nhịp tim": 72, "Ghi chú": "Buổi sáng, sau ngủ dậy" },
+                { "Thời gian": "2026-03-01 19:45", "Tâm thu": 124, "Tâm trương": 82, "Nhịp tim": 75, "Ghi chú": "Buổi tối, thấy hơi mệt" },
+                { "Thời gian": "2026-03-02 07:15", "Tâm thu": 122, "Tâm trương": 80, "Nhịp tim": 70, "Ghi chú": "Bình thường" },
+                { "Thời gian": "2026-03-02 20:00", "Tâm thu": 132, "Tâm trương": 85, "Nhịp tim": 78, "Ghi chú": "Vừa đi bộ về" },
+                { "Thời gian": "2026-03-03 07:00", "Tâm thu": 120, "Tâm trương": 79, "Nhịp tim": 68, "Ghi chú": "Sức khỏe tốt" },
+                { "Thời gian": "2026-03-03 19:30", "Tâm thu": 138, "Tâm trương": 88, "Nhịp tim": 82, "Ghi chú": "Sau bữa tối" },
+                { "Thời gian": "2026-03-04 07:20", "Tâm thu": 126, "Tâm trương": 81, "Nhịp tim": 71, "Ghi chú": "Nghơi ngơi đủ" },
+                { "Thời gian": "2026-03-04 21:00", "Tâm thu": 142, "Tâm trương": 91, "Nhịp tim": 85, "Ghi chú": "Căng thẳng công việc" },
+                { "Thời gian": "2026-03-05 07:30", "Tâm thu": 128, "Tâm trương": 83, "Nhịp tim": 73, "Ghi chú": "Uống cà phê sáng" },
+                { "Thời gian": "2026-03-05 20:15", "Tâm thu": 135, "Tâm trương": 86, "Nhịp tim": 76, "Ghi chú": "Nhẹ nhàng" },
+                { "Thời gian": "2026-03-06 07:10", "Tâm thu": 121, "Tâm trương": 79, "Nhịp tim": 69, "Ghi chú": "Sáng sớm" },
+                { "Thời gian": "2026-03-06 19:40", "Tâm thu": 129, "Tâm trương": 84, "Nhịp tim": 74, "Ghi chú": "Bình thường" },
+            ];
+
+            window.onload = function () {
+                lucide.createIcons();
+                loadInitialData(sampleExcelData);
+                document.getElementById("excelFile").addEventListener("change", handleFileUpload, false);
+            };
+
+            // Load & Normalize Dataset
+            function loadInitialData(rawRows) {
+                parsedData = normalizeRows(rawRows);
+                renderDashboard();
+                runAiAnalysis();
+            }
+
+            // Handle File Upload
+            function handleFileUpload(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                document.getElementById("loadedFileName").textContent = file.name;
+
+                const reader = new FileReader();
+                reader.onload = function (evt) {
+                    try {
+                        const data = new Uint8Array(evt.target.result);
+                        const workbook = XLSX.read(data, { type: "array" });
+                        const firstSheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[firstSheetName];
+                        const json = XLSX.utils.sheet_to_json(worksheet);
+
+                        if (json && json.length > 0) {
+                            parsedData = normalizeRows(json);
+                            renderDashboard();
+                            runAiAnalysis();
+                        } else {
+                            alert("File Excel không có dữ liệu hoặc định dạng chưa đúng!");
+                        }
+                    } catch (err) {
+                        console.error("Lỗi đọc file Excel:", err);
+                        alert("Không thể đọc file Excel này. Vui lòng kiểm tra lại định dạng.");
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            }
+
+            // Key Normalization Routine (maps various column names to standard fields)
+            function normalizeRows(rows) {
+                return rows
+                    .map((row, idx) => {
+                        // Key matching helper
+                        const findVal = (keywords) => {
+                            for (let key in row) {
+                                const cleanKey = key.toLowerCase().trim();
+                                if (keywords.some((k) => cleanKey.includes(k))) {
+                                    return row[key];
+                                }
+                            }
+                            return null;
+                        };
+
+                        const rawTime = findVal(["thời gian", "timestamp", "ngày", "date", "thoi gian"]) || `Lần ${idx + 1}`;
+                        const sys = parseInt(findVal(["tâm thu", "systolic", "sys", "tam thu"]) || 0);
+                        const dia = parseInt(findVal(["tâm trương", "diastolic", "dia", "tam truong"]) || 0);
+                        const pulse = parseInt(findVal(["nhịp tim", "pulse", "hr", "nhip tim", "mạch"]) || 0);
+                        const notes = findVal(["ghi chú", "notes", "triệu chứng", "ghi chu", "nhận xét"]) || "";
+
+                        const catInfo = classifyBP(sys, dia);
+
+                        return {
+                            id: idx + 1,
+                            time: rawTime,
+                            sys: sys,
+                            dia: dia,
+                            pulse: pulse,
+                            notes: notes,
+                            category: catInfo.name,
+                            catColor: catInfo.color,
+                            catBadge: catInfo.badgeClass,
+                        };
+                    })
+                    .filter((item) => item.sys > 0 && item.dia > 0);
+            }
+
+            // Blood Pressure Classification (AHA Standards)
+            function classifyBP(sys, dia) {
+                if (sys > 180 || dia > 120) {
+                    return { name: "Cơn Tăng Huyết Áp", color: "#dc2626", badgeClass: "bg-red-100 text-red-800 border-red-200" };
+                } else if (sys >= 140 || dia >= 90) {
+                    return { name: "Tăng Huyết Áp Độ 2", color: "#ea580c", badgeClass: "bg-orange-100 text-orange-800 border-orange-200" };
+                } else if ((sys >= 130 && sys <= 139) || (dia >= 80 && dia <= 89)) {
+                    return { name: "Tăng Huyết Áp Độ 1", color: "#f59e0b", badgeClass: "bg-amber-100 text-amber-800 border-amber-200" };
+                } else if (sys >= 120 && sys <= 129 && dia < 80) {
+                    return { name: "Tiền Tăng Huyết Áp", color: "#3b82f6", badgeClass: "bg-blue-100 text-blue-800 border-blue-200" };
+                } else if (sys < 120 && dia < 80) {
+                    return { name: "Bình Thường", color: "#10b981", badgeClass: "bg-emerald-100 text-emerald-800 border-emerald-200" };
+                }
+                return { name: "Không xác định", color: "#94a3b8", badgeClass: "bg-slate-100 text-slate-800" };
+            }
+
+            // Render Dashboard UI Component
+            function renderDashboard() {
+                if (!parsedData.length) return;
+
+                // 1. Calculate Summary Metrics
+                const total = parsedData.length;
+                const avgSys = Math.round(parsedData.reduce((acc, curr) => acc + curr.sys, 0) / total);
+                const avgDia = Math.round(parsedData.reduce((acc, curr) => acc + curr.dia, 0) / total);
+                const avgPulse = Math.round(parsedData.reduce((acc, curr) => acc + curr.pulse, 0) / total);
+
+                document.getElementById("metricAvgSys").textContent = avgSys;
+                document.getElementById("metricAvgDia").textContent = avgDia;
+                document.getElementById("metricAvgPulse").textContent = avgPulse || "--";
+                document.getElementById("metricTotalLogs").textContent = total;
+
+                document.getElementById("dateRangeText").textContent = `${parsedData[0].time} ~ ${parsedData[total - 1].time}`;
+
+                // General Status Badges
+                const overallCat = classifyBP(avgSys, avgDia);
+                document.getElementById("statusSys").textContent = avgSys < 120 ? "Tối ưu" : avgSys < 130 ? "Hơi cao" : "Cần chú ý";
+                document.getElementById("statusDia").textContent = avgDia < 80 ? "Tối ưu" : "Hơi cao";
+
+                const riskBadge = document.getElementById("metricRiskBadge");
+                riskBadge.textContent = overallCat.name;
+                riskBadge.className = `mt-2 text-xs font-semibold inline-block px-2.5 py-1 rounded-full border ${overallCat.catBadge}`;
+
+                // 2. Render Charts
+                renderTrendChart();
+                renderCategoryChart();
+                renderPulseChart();
+                renderDaytimeChart();
+
+                // 3. Render Table
+                renderTable();
+            }
+
+            // Chart 1: Time Series Trend
+            function renderTrendChart() {
+                const ctx = document.getElementById("trendChart").getContext("2d");
+                if (chartInstances.trend) chartInstances.trend.destroy();
+
+                const labels = parsedData.map((d) => d.time);
+                const sysData = parsedData.map((d) => d.sys);
+                const diaData = parsedData.map((d) => d.dia);
+
+                chartInstances.trend = new Chart(ctx, {
+                    type: "line",
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: "Tâm Thu (SYS)",
+                                data: sysData,
+                                borderColor: "#f43f5e",
+                                backgroundColor: "rgba(244, 63, 94, 0.08)",
+                                fill: true,
+                                tension: 0.3,
+                                borderWidth: 2,
+                                pointRadius: 4,
+                                pointHoverRadius: 6,
+                            },
+                            {
+                                label: "Tâm Trương (DIA)",
+                                data: diaData,
+                                borderColor: "#3b82f6",
+                                backgroundColor: "rgba(59, 130, 246, 0.08)",
+                                fill: true,
+                                tension: 0.3,
+                                borderWidth: 2,
+                                pointRadius: 4,
+                                pointHoverRadius: 6,
+                            },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                        },
+                        scales: {
+                            y: {
+                                min: 50,
+                                max: 200,
+                                grid: { color: "#f1f5f9" },
+                                ticks: { font: { size: 11 } },
+                            },
+                            x: {
+                                grid: { display: false },
+                                ticks: { font: { size: 10 }, maxRotation: 45 },
+                            },
+                        },
+                    },
+                });
+            }
+
+            // Chart 2: Category Donut
+            function renderCategoryChart() {
+                const ctx = document.getElementById("categoryChart").getContext("2d");
+                if (chartInstances.category) chartInstances.category.destroy();
+
+                const catCounts = {};
+                parsedData.forEach((d) => {
+                    catCounts[d.category] = (catCounts[d.category] || 0) + 1;
+                });
+
+                const labels = Object.keys(catCounts);
+                const counts = Object.values(catCounts);
+                const colors = labels.map((label) => {
+                    const sample = parsedData.find((d) => d.category === label);
+                    return sample ? sample.catColor : "#cbd5e1";
+                });
+
+                chartInstances.category = new Chart(ctx, {
+                    type: "doughnut",
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                data: counts,
+                                backgroundColor: colors,
+                                borderWidth: 2,
+                                borderColor: "#ffffff",
+                            },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: "bottom", labels: { font: { size: 11 }, boxWidth: 12 } },
+                        },
+                        cutout: "70%",
+                    },
+                });
+            }
+
+            // Chart 3: Pulse Line
+            function renderPulseChart() {
+                const ctx = document.getElementById("pulseChart").getContext("2d");
+                if (chartInstances.pulse) chartInstances.pulse.destroy();
+
+                const labels = parsedData.map((d) => d.time);
+                const pulseData = parsedData.map((d) => d.pulse);
+
+                chartInstances.pulse = new Chart(ctx, {
+                    type: "bar",
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: "Nhịp tim (BPM)",
+                                data: pulseData,
+                                backgroundColor: "rgba(16, 185, 129, 0.7)",
+                                borderRadius: 6,
+                            },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { min: 40, max: 130, grid: { color: "#f1f5f9" } },
+                            x: { grid: { display: false } },
+                        },
+                    },
+                });
+            }
+
+            // Chart 4: Day vs Night comparison
+            function renderDaytimeChart() {
+                const ctx = document.getElementById("daytimeChart").getContext("2d");
+                if (chartInstances.daytime) chartInstances.daytime.destroy();
+
+                let morningSys = [];
+                let eveningSys = [];
+
+                parsedData.forEach((d) => {
+                    const timeStr = String(d.time);
+                    if (timeStr.includes("06:") || timeStr.includes("07:") || timeStr.includes("08:") || timeStr.includes("09:") || timeStr.toLowerCase().includes("sáng")) {
+                        morningSys.push(d.sys);
+                    } else {
+                        eveningSys.push(d.sys);
+                    }
+                });
+
+                const avgMorning = morningSys.length ? Math.round(morningSys.reduce((a, b) => a + b, 0) / morningSys.length) : 0;
+                const avgEvening = eveningSys.length ? Math.round(eveningSys.reduce((a, b) => a + b, 0) / eveningSys.length) : 0;
+
+                chartInstances.daytime = new Chart(ctx, {
+                    type: "bar",
+                    data: {
+                        labels: ["Buổi Sáng (Morning)", "Buổi Tối (Evening)"],
+                        datasets: [
+                            {
+                                label: "Tâm thu Trung Bình (mmHg)",
+                                data: [avgMorning, avgEvening],
+                                backgroundColor: ["#f59e0b", "#6366f1"],
+                                borderRadius: 8,
+                            },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { min: 80, max: 160, grid: { color: "#f1f5f9" } },
+                        },
+                    },
+                });
+            }
+
+            // Render Data Table
+            function renderTable() {
+                const tbody = document.getElementById("tableBody");
+                tbody.innerHTML = "";
+
+                parsedData.forEach((row) => {
+                    const tr = document.createElement("tr");
+                    tr.className = "hover:bg-slate-50/80 transition-colors";
+                    tr.innerHTML = `
+                    <td class="p-3 font-medium text-slate-500">${row.id}</td>
+                    <td class="p-3 font-medium text-slate-900">${row.time}</td>
+                    <td class="p-3 text-center font-semibold text-rose-600">${row.sys}</td>
+                    <td class="p-3 text-center font-semibold text-blue-600">${row.dia}</td>
+                    <td class="p-3 text-center font-medium text-emerald-600">${row.pulse || "-"}</td>
+                    <td class="p-3">
+                        <span class="px-2 py-0.5 rounded-full text-xs font-semibold border ${row.catBadge}">
+                            ${row.category}
+                        </span>
+                    </td>
+                    <td class="p-3 text-slate-500 max-w-xs truncate">${row.notes || "-"}</td>
+                `;
+                    tbody.appendChild(tr);
+                });
+            }
+
+            // Table Filter
+            function filterTable() {
+                const query = document.getElementById("searchInput").value.toLowerCase();
+                const rows = document.getElementById("tableBody").getElementsByTagName("tr");
+
+                Array.from(rows).forEach((row) => {
+                    const text = row.textContent.toLowerCase();
+                    row.style.display = text.includes(query) ? "" : "none";
+                });
+            }
+
+            // Export Table back to Excel
+            function exportTableToExcel() {
+                const ws = XLSX.utils.json_to_sheet(
+                    parsedData.map((d) => ({
+                        STT: d.id,
+                        "Thời gian": d.time,
+                        "Tâm Thu (SYS)": d.sys,
+                        "Tâm Trương (DIA)": d.dia,
+                        "Nhịp Tim (BPM)": d.pulse,
+                        "Phân loại AHA": d.category,
+                        "Ghi chú": d.notes,
+                    }))
+                );
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "BaoCaoHuyetAp");
+                XLSX.writeFile(wb, "Bao_Cao_Huyet_Ap_Export.xlsx");
+            }
+
+            // Gemini AI Integration for Medical Analysis
+            async function runAiAnalysis() {
+                const aiLoading = document.getElementById("aiLoading");
+                const aiContent = document.getElementById("aiContent");
+
+                aiLoading.classList.remove("hidden");
+                aiContent.classList.add("hidden");
+
+                try {
+                    // Calculate summary metrics for prompt
+                    const sysList = parsedData.map((d) => d.sys);
+                    const diaList = parsedData.map((d) => d.dia);
+                    const avgSys = Math.round(sysList.reduce((a, b) => a + b, 0) / sysList.length);
+                    const avgDia = Math.round(diaList.reduce((a, b) => a + b, 0) / diaList.length);
+                    const maxSys = Math.max(...sysList);
+                    const minSys = Math.min(...sysList);
+
+                    const promptText = `
+                    Bạn là một chuyên gia Tim Mạch Y tế hàng đầu. Hãy phân tích bảng dữ liệu đo huyết áp sau đây và đưa ra nhận xét chuyên môn chi tiết bằng Tiếng Việt.
+
+                    TỔNG QUAN DỮ LIỆU:
+                    - Số lần đo: ${parsedData.length}
+                    - Tâm Thu trung bình: ${avgSys} mmHg (Cao nhất: ${maxSys}, Thấp nhất: ${minSys})
+                    - Tâm Trương trung bình: ${avgDia} mmHg
+                    - Các bản ghi đo chi tiết: ${JSON.stringify(parsedData.slice(0, 15))}
+
+                    YÊU CẦU ĐÁNH GIÁ (Trình bày dưới dạng HTML đẹp mắt với các thẻ <h4>, <ul>, <li>, <strong>):
+                    1. **Đánh giá tổng quan mức độ kiểm soát huyết áp** (Theo chuẩn AHA).
+                    2. **Nhận diện biến động rủi ro** (Có xu hướng tăng vào thời điểm nào? Có lần nào huyết áp chạm ngưỡng nguy hiểm không?).
+                    3. **Lời khuyên dinh dưỡng & lối sống** (Cho bệnh nhân dựa trên số liệu thực tế này).
+                    4. **Khuyến cáo theo dõi y tế** (Khi nào cần gặp bác sĩ).
+                `;
+
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=AQ.Ab8RN6Kri4uRtbGtQaFzT2TEz_idRPxzQtGunHkvK6FZ2VLZAA`;
+
+                    const response = await fetch(apiUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: promptText }] }],
+                            systemInstruction: {
+                                parts: [{ text: "Trả về kết quả bằng HTML định dạng chuẩn, sạch sẽ, chỉ chứa các thẻ nội dung (h4, p, ul, li, strong, span), không bao bọc trong mã ```html." }],
+                            },
+                        }),
+                    });
+
+                    const result = await response.json();
+                    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                    if (text) {
+                        aiContent.innerHTML = text;
+                    } else {
+                        aiContent.innerHTML = "<p class='text-red-500'>Không thể nhận phản hồi từ AI. Vui lòng thử lại sau.</p>";
+                    }
+                } catch (err) {
+                    console.error("AI Analysis Error:", err);
+                    aiContent.innerHTML = `<div class="p-3 bg-rose-50 text-rose-700 rounded-lg text-xs">
+                    <strong>Đánh giá tự động (Chế độ dự phòng):</strong><br>
+                    Huyết áp trung bình của bạn là <strong>${document.getElementById("metricAvgSys").textContent}/${document.getElementById("metricAvgDia").textContent} mmHg</strong>. 
+                    Nên tiếp tục ghi nhận đều đặn 2 lần/ngày (sáng và tối) và duy trì chế độ ăn giảm muối.
+                </div>`;
+                } finally {
+                    aiLoading.classList.add("hidden");
+                    aiContent.classList.remove("hidden");
+                }
+            }
+        </script>
+    </body>
+</html>
