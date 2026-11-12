@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Trực Quan Hóa & Phân Tích Kết Quả Đo Huyết Áp</title>
+        <title>Theo dõi kết quả đo huyết áp</title>
 
         <!-- Tailwind CSS -->
         <script src="https://cdn.tailwindcss.com"></script>
@@ -310,26 +310,32 @@
                             <p class="text-[10px] sm:text-xs text-slate-500">Phân tích chênh lệch 2 tay, biến động theo buổi & khuyến nghị cá nhân hóa</p>
                         </div>
                     </div>
-                    <button onclick="runAiAnalysis(true)" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 p-1.5 rounded-lg hover:bg-indigo-50 flex items-center gap-1 active:scale-95 transition">
-                        <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
-                        <span class="hidden sm:inline">Phân tích lại</span>
+
+                    <!-- Run AI Button (Triggers manual analysis) -->
+                    <button id="btnRunAi" onclick="runAiAnalysis(true)" class="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg shadow-sm flex items-center gap-1.5 active:scale-95 transition">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                        <span>Phân tích ngay</span>
                     </button>
                 </div>
 
-                <div id="aiLoading" class="hidden py-6 text-center">
+                <div id="aiLoading" class="hidden mb-6 text-center">
                     <div class="inline-block animate-spin rounded-full h-7 w-7 border-3 border-indigo-600 border-t-transparent mb-2"></div>
                     <p class="text-xs font-medium text-indigo-900">AI đang phân tích biến động buổi, chênh lệch 2 tay & lập đề xuất y khoa...</p>
                 </div>
 
                 <div id="aiContent" class="space-y-4 text-xs sm:text-sm">
-                    <p class="text-slate-500 italic">Hệ thống sẽ tự động tổng hợp đánh giá y khoa ngay khi tải dữ liệu Excel lên.</p>
+                    <p class="text-slate-500">
+                        Vui lòng tải dữ liệu lên và nhấn
+                        <strong>"Phân tích ngay"</strong>
+                        để kích hoạt phân tích từ AI.
+                    </p>
                 </div>
             </div>
         </main>
 
         <!-- Footer -->
         <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
-            <p>Hệ Thống Trực Quan Hóa Huyết Áp Y Khoa © 2026 - Tích hợp AI Gemini 3 Flash</p>
+            <p>&copy; 2026 Blood Pressure AI Analysis Tool by Van Toan. All rights reserved.</p>
         </footer>
 
         <!-- JavaScript Application Logic -->
@@ -363,11 +369,11 @@
                 }`;
 
                 toast.innerHTML = `
-                <div class="flex items-center space-x-2">
-                    <i data-lucide="${isError ? "alert-circle" : "check-circle-2"}" class="w-4 h-4 text-${isError ? "rose-400" : "emerald-400"}"></i>
-                    <span>${message}</span>
-                </div>
-            `;
+                    <div class="flex items-center space-x-2">
+                        <i data-lucide="${isError ? "alert-circle" : "check-circle-2"}" class="w-4 h-4 text-${isError ? "rose-400" : "emerald-400"}"></i>
+                        <span>${message}</span>
+                    </div>
+                `;
 
                 container.appendChild(toast);
                 lucide.createIcons();
@@ -591,7 +597,19 @@
             function loadInitialData(rawRows) {
                 parsedData = normalizeRows(rawRows);
                 renderDashboard();
-                runAiAnalysis(false); // Render cache if available
+
+                // Read latest analysis from localStorage on reload
+                const cachedAnalysis = localStorage.getItem("latest_bp_ai_analysis");
+                const aiContent = document.getElementById("aiContent");
+                const aiCacheBadge = document.getElementById("aiCacheBadge");
+
+                if (cachedAnalysis) {
+                    aiContent.innerHTML = cachedAnalysis;
+                    aiCacheBadge.classList.remove("hidden");
+                    lucide.createIcons();
+                } else {
+                    aiCacheBadge.classList.add("hidden");
+                }
             }
 
             // Handle File Upload
@@ -629,7 +647,21 @@
                             }
 
                             renderDashboard();
-                            runAiAnalysis(false);
+
+                            // Reset and clear existing AI analysis when a new file is uploaded
+                            localStorage.removeItem("latest_bp_ai_analysis");
+                            const aiContent = document.getElementById("aiContent");
+                            const aiCacheBadge = document.getElementById("aiCacheBadge");
+
+                            aiCacheBadge.classList.add("hidden");
+                            aiContent.innerHTML = `
+                                <p class="text-green-600">
+                                    Đã tải file mới thành công. Vui lòng nhấn
+                                    <strong>"Phân tích ngay"</strong>
+                                    để kích hoạt phân tích AI cho bộ dữ liệu mới này.
+                                </p>
+                            `;
+
                             showToast(`Tải thành công ${parsedData.length} lượt đo huyết áp!`);
                         } else {
                             showToast("File Excel trống hoặc định dạng chưa đúng!", true);
@@ -899,20 +931,23 @@
                 renderTable(filtered);
             }
 
-            // AI Analysis Call with Caching & Structured Template
+            // AI Analysis Function - Activated ONLY manually by user button click
             async function runAiAnalysis(forceRefresh = false) {
-                if (!parsedData || parsedData.length === 0) return;
+                if (!parsedData || parsedData.length === 0) {
+                    showToast("Vui lòng tải hoặc chọn dữ liệu trước khi phân tích!");
+                    return;
+                }
 
                 const aiLoading = document.getElementById("aiLoading");
                 const aiContent = document.getElementById("aiContent");
                 const aiCacheBadge = document.getElementById("aiCacheBadge");
 
-                // Unique Hash Key for Current Dataset
-                const dataHash = `bp_ai_cache_${parsedData.length}_${parsedData[0].time}_${parsedData[parsedData.length - 1].time}`;
+                // Single Storage Key for the Absolute Latest Analysis
+                const cacheKey = "latest_bp_ai_analysis";
 
                 // Check Cache if Force Refresh is NOT requested
                 if (!forceRefresh) {
-                    const cachedAnalysis = sessionStorage.getItem(dataHash);
+                    const cachedAnalysis = localStorage.getItem(cacheKey);
                     if (cachedAnalysis) {
                         aiContent.innerHTML = cachedAnalysis;
                         aiCacheBadge.classList.remove("hidden");
@@ -948,11 +983,11 @@
                     };
 
                     const sessionSummaryText = `
-                    - Buổi Sáng (04:00-11:00): ${getSessionAvg(sessionStats.sáng)}
-                    - Buổi Trưa (11:00-14:00): ${getSessionAvg(sessionStats.trưa)}
-                    - Buổi Chiều (14:00-18:00): ${getSessionAvg(sessionStats.chiều)}
-                    - Buổi Tối (18:00-04:00): ${getSessionAvg(sessionStats.tối)}
-                `;
+                        - Buổi Sáng (04:00-11:00): ${getSessionAvg(sessionStats.sáng)}
+                        - Buổi Trưa (11:00-14:00): ${getSessionAvg(sessionStats.trưa)}
+                        - Buổi Chiều (14:00-18:00): ${getSessionAvg(sessionStats.chiều)}
+                        - Buổi Tối (18:00-04:00): ${getSessionAvg(sessionStats.tối)}
+                    `;
 
                     const sysList = parsedData.map((d) => d.sys);
                     const diaList = parsedData.map((d) => d.dia);
@@ -961,81 +996,81 @@
                     const avgDia = Math.round(diaList.reduce((a, b) => a + b, 0) / diaList.length);
                     const avgPulse = pulseList.length ? Math.round(pulseList.reduce((a, b) => a + b, 0) / pulseList.length) : 75;
 
-                    const armDiffList = parsedData.map((d) => Math.abs(d.rightSys - d.leftSys));
+                    const armDiffList = parsedData.map((d) => Math.abs((d.rightSys || d.sys) - (d.leftSys || d.sys)));
                     const maxArmDiff = Math.max(...armDiffList);
                     const avgArmDiff = Math.round(armDiffList.reduce((a, b) => a + b, 0) / armDiffList.length);
 
                     const promptText = `
-                    Bạn là Bác sĩ Chuyên khoa Tim mạch. Phân tích kết quả đo huyết áp thực tế từ file Excel bằng Tiếng Việt chuẩn y khoa.
+                        Bạn là Bác sĩ Chuyên khoa Tim mạch. Phân tích kết quả đo huyết áp thực tế từ file Excel bằng Tiếng Việt chuẩn y khoa.
 
-                    THÔNG TIN THỐNG KÊ CHI TIẾT:
-                    1. Tổng lượt đo: ${parsedData.length} lượt.
-                    2. Huyết áp trung bình toàn bộ: ${avgSys}/${avgDia} mmHg | Nhịp tim trung bình: ${avgPulse} BPM.
-                    3. Chênh lệch huyết áp tâm thu giữa 2 tay (Phải vs Trái): Trung bình chênh ${avgArmDiff} mmHg (Cao nhất chênh ${maxArmDiff} mmHg).
-                    4. Biến động thống kê theo Buổi trong ngày:
-                    ${sessionSummaryText}
+                        THÔNG TIN THỐNG KÊ CHI TIẾT:
+                        1. Tổng lượt đo: ${parsedData.length} lượt.
+                        2. Huyết áp trung bình toàn bộ: ${avgSys}/${avgDia} mmHg | Nhịp tim trung bình: ${avgPulse} BPM.
+                        3. Chênh lệch huyết áp tâm thu giữa 2 tay (Phải vs Trái): Trung bình chênh ${avgArmDiff} mmHg (Cao nhất chênh ${maxArmDiff} mmHg).
+                        4. Biến động thống kê theo Buổi trong ngày:
+                        ${sessionSummaryText}
 
-                    MẪU ĐỊNH DẠNG TRẢ VỀ (BẮT BUỘC dùng chính xác cấu trúc HTML giao diện đẹp bên dưới, điền nội dung y khoa chuẩn vào đúng các mục):
+                        MẪU ĐỊNH DẠNG TRẢ VỀ (BẮT BUỘC dùng chính xác cấu trúc HTML giao diện đẹp bên dưới, điền nội dung y khoa chuẩn vào đúng các mục):
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <!-- Thẻ 1: Phân Tích Tổng Quan AHA -->
-                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
-                            <div class="flex items-center gap-2 font-bold text-slate-900 text-sm sm:text-base border-b border-slate-100 pb-2">
-                                <span class="p-1.5 bg-rose-100 text-rose-600 rounded-lg"><i data-lucide="heart-pulse" class="w-4 h-4"></i></span>
-                                1. Phân Tích Tổng Quan (Chuẩn AHA)
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Thẻ 1: Phân Tích Tổng Quan AHA -->
+                            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
+                                <div class="flex items-center gap-2 font-bold text-slate-900 text-sm sm:text-base border-b border-slate-100 pb-2">
+                                    <span class="p-1.5 bg-rose-100 text-rose-600 rounded-lg"><i data-lucide="heart-pulse" class="w-4 h-4"></i></span>
+                                    1. Phân Tích Tổng Quan (Chuẩn AHA)
+                                </div>
+                                <p class="text-slate-700 leading-relaxed">[Nhận xét chi tiết chỉ số trung bình ${avgSys}/${avgDia} mmHg, phân loại theo AHA, đánh giá chỉ số nhịp tim ${avgPulse} BPM và độ dao động chung]</p>
                             </div>
-                            <p class="text-slate-700 leading-relaxed">[Nhận xét chi tiết chỉ số trung bình ${avgSys}/${avgDia} mmHg, phân loại theo AHA, đánh giá chỉ số nhịp tim ${avgPulse} BPM và độ dao động chung]</p>
-                        </div>
 
-                        <!-- Thẻ 2: Chênh Lệch 2 Tay & Biến Động Theo Buổi -->
-                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
-                            <div class="flex items-center gap-2 font-bold text-slate-900 text-sm sm:text-base border-b border-slate-100 pb-2">
-                                <span class="p-1.5 bg-blue-100 text-blue-600 rounded-lg"><i data-lucide="clock" class="w-4 h-4"></i></span>
-                                2. Chênh Lệch 2 Tay & Biến Động Theo Buổi
-                            </div>
-                            <p class="text-slate-700 leading-relaxed"><strong>• Chênh lệch 2 tay:</strong> [Đánh giá mức chênh trung bình ${avgArmDiff} mmHg giữa tay phải & trái. Nếu >10-15 mmHg thì cảnh báo nguy cơ tim mạch/xơ vữa]</p>
-                            <p class="text-slate-700 leading-relaxed"><strong>• Biến động theo buổi:</strong> [Đánh giá sự chênh lệch giữa Sáng, Trưa, Chiều, Tối. Chú ý hiện tượng tăng huyết áp buổi sáng nếu có]</p>
-                        </div>
-                    </div>
-
-                    <!-- Thẻ 3: Kết Luận & Đánh Giá Y Khoa -->
-                    <div class="bg-amber-50/60 border border-amber-200 p-4 rounded-xl space-y-2">
-                        <div class="flex items-center gap-2 font-bold text-amber-900 text-sm sm:text-base border-b border-amber-200/60 pb-2">
-                            <span class="p-1.5 bg-amber-200 text-amber-800 rounded-lg"><i data-lucide="file-check" class="w-4 h-4"></i></span>
-                            3. Kết Luận & Đánh Giá Rủi Ro Y Khoa
-                        </div>
-                        <p class="text-amber-950 font-medium leading-relaxed">[Kết luận tổng thể nguy cơ sức khỏe, điểm cần theo dõi sát sao nhất]</p>
-                    </div>
-
-                    <!-- Thẻ 4: Phương Án Cải Thiện & Lời Khuyên -->
-                    <div class="bg-emerald-50/60 border border-emerald-200 p-4 rounded-xl space-y-3">
-                        <div class="flex items-center gap-2 font-bold text-emerald-900 text-sm sm:text-base border-b border-emerald-200/60 pb-2">
-                            <span class="p-1.5 bg-emerald-200 text-emerald-800 rounded-lg"><i data-lucide="sparkles" class="w-4 h-4"></i></span>
-                            4. Đề Xuất Phương Án Cải Thiện & Khuyến Nghị
-                        </div>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-emerald-950">
-                            <div>
-                                <strong class="text-xs uppercase tracking-wider text-emerald-800 block mb-1">🥗 Dinh dưỡng & Ăn uống (DASH)</strong>
-                                <ul class="list-disc pl-4 space-y-1 text-xs">
-                                    <li>[Khuyến nghị giảm muối/natri]</li>
-                                    <li>[Khuyến nghị thực phẩm giàu Kali, Magie, chất xơ]</li>
-                                </ul>
-                            </div>
-                            <div>
-                                <strong class="text-xs uppercase tracking-wider text-emerald-800 block mb-1">🏃‍♂️ Lối sống & Vận động</strong>
-                                <ul class="list-disc pl-4 space-y-1 text-xs">
-                                    <li>[Khuyến nghị tập luyện thể thao]</li>
-                                    <li>[Quản lý căng thẳng & Giấc ngủ]</li>
-                                </ul>
+                            <!-- Thẻ 2: Chênh Lệch 2 Tay & Biến Động Theo Buổi -->
+                            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
+                                <div class="flex items-center gap-2 font-bold text-slate-900 text-sm sm:text-base border-b border-slate-100 pb-2">
+                                    <span class="p-1.5 bg-blue-100 text-blue-600 rounded-lg"><i data-lucide="clock" class="w-4 h-4"></i></span>
+                                    2. Chênh Lệch 2 Tay & Biến Động Theo Buổi
+                                </div>
+                                <p class="text-slate-700 leading-relaxed"><strong>• Chênh lệch 2 tay:</strong> [Đánh giá mức chênh trung bình ${avgArmDiff} mmHg giữa tay phải & trái. Nếu >10-15 mmHg thì cảnh báo nguy cơ tim mạch/xơ vữa]</p>
+                                <p class="text-slate-700 leading-relaxed"><strong>• Biến động theo buổi:</strong> [Đánh giá sự chênh lệch giữa Sáng, Trưa, Chiều, Tối. Chú ý hiện tượng tăng huyết áp buổi sáng nếu có]</p>
                             </div>
                         </div>
-                        <div class="pt-2 border-t border-emerald-200/60 text-xs text-emerald-800 italic">
-                            💡 <strong>Lời khuyên Bác sĩ:</strong> [Lời khuyên thời điểm đo lại hoặc khi nào cần khám trực tiếp]
-                        </div>
-                    </div>
-                `;
 
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=AQ.Ab8RN6Kri4uRtbGtQaFzT2TEz_idRPxzQtGunHkvK6FZ2VLZAA`;
+                        <!-- Thẻ 3: Kết Luận & Đánh Giá Y Khoa -->
+                        <div class="bg-amber-50/60 border border-amber-200 p-4 rounded-xl space-y-2">
+                            <div class="flex items-center gap-2 font-bold text-amber-900 text-sm sm:text-base border-b border-amber-200/60 pb-2">
+                                <span class="p-1.5 bg-amber-200 text-amber-800 rounded-lg"><i data-lucide="file-check" class="w-4 h-4"></i></span>
+                                3. Kết Luận & Đánh Giá Rủi Ro Y Khoa
+                            </div>
+                            <p class="text-amber-950 font-medium leading-relaxed">[Kết luận tổng thể nguy cơ sức khỏe, điểm cần theo dõi sát sao nhất]</p>
+                        </div>
+
+                        <!-- Thẻ 4: Phương Án Cải Thiện & Lời Khuyên -->
+                        <div class="bg-emerald-50/60 border border-emerald-200 p-4 rounded-xl space-y-3">
+                            <div class="flex items-center gap-2 font-bold text-emerald-900 text-sm sm:text-base border-b border-emerald-200/60 pb-2">
+                                <span class="p-1.5 bg-emerald-200 text-emerald-800 rounded-lg"><i data-lucide="sparkles" class="w-4 h-4"></i></span>
+                                4. Đề Xuất Phương Án Cải Thiện & Khuyến Nghị
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-emerald-950">
+                                <div>
+                                    <strong class="text-xs uppercase tracking-wider text-emerald-800 block mb-1">🥗 Dinh dưỡng & Ăn uống (DASH)</strong>
+                                    <ul class="list-disc pl-4 space-y-1 text-xs">
+                                        <li>[Khuyến nghị giảm muối/natri]</li>
+                                        <li>[Khuyến nghị thực phẩm giàu Kali, Magie, chất xơ]</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <strong class="text-xs uppercase tracking-wider text-emerald-800 block mb-1">🏃‍♂️ Lối sống & Vận động</strong>
+                                    <ul class="list-disc pl-4 space-y-1 text-xs">
+                                        <li>[Khuyến nghị tập luyện thể thao]</li>
+                                        <li>[Quản lý căng thẳng & Giấc ngủ]</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="pt-2 border-t border-emerald-200/60 text-sm text-emerald-800">
+                                <strong>KIẾN NGHỊ:</strong> [Lời khuyên thời điểm đo lại hoặc khi nào cần khám trực tiếp]
+                            </div>
+                        </div>
+                    `;
+
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=AQ.Ab8RN6IoJt7kG-PJUW5aHnfi6D-lZnYDwssvlSm3184aKGab5Q`;
 
                     const response = await fetch(apiUrl, {
                         method: "POST",
@@ -1052,17 +1087,23 @@
                     const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
 
                     if (text) {
+                        // Completely remove old cache and replace with newly generated analysis
+                        localStorage.removeItem(cacheKey);
+                        localStorage.setItem(cacheKey, text);
+
                         aiContent.innerHTML = text;
-                        sessionStorage.setItem(dataHash, text);
-                        showToast("Đã hoàn tất phân tích AI & cập nhật vào bản lưu tạm!");
+                        aiCacheBadge.classList.remove("hidden");
+                        showToast("Đã lưu kết quả phân tích mới nhất làm chuẩn!");
                     } else {
                         aiContent.innerHTML = "<p class='text-red-500 font-medium'>Không thể tải phân tích từ AI lúc này. Vui lòng thử lại sau.</p>";
                     }
                 } catch (err) {
                     console.error("AI Error:", err);
+                    const sysAvgText = document.getElementById("metricAvgSys").textContent;
+                    const diaAvgText = document.getElementById("metricAvgDia").textContent;
                     aiContent.innerHTML = `<div class="p-3 bg-rose-50 text-rose-700 rounded-lg text-xs">
-                    <strong>Tóm tắt tự động:</strong> Huyết áp trung bình là <strong>${document.getElementById("metricAvgSys").textContent}/${document.getElementById("metricAvgDia").textContent} mmHg</strong>. Hệ thống không thể kết nối tới dịch vụ AI lúc này.
-                </div>`;
+                        <strong>Tóm tắt tự động:</strong> Huyết áp trung bình là <strong>${sysAvgText}/${diaAvgText} mmHg</strong>. Hệ thống không thể kết nối tới dịch vụ AI lúc này.
+                    </div>`;
                 } finally {
                     aiLoading.classList.add("hidden");
                     aiContent.classList.remove("hidden");
